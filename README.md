@@ -2,6 +2,8 @@
 
 AI agentic workflow for generating interview tests from a job description (JD) using FastAPI, LangGraph, and LangChain with Gemini 2.5 Flash.
 
+Current scope: only MCQ and scenario-based question generation.
+
 ## Project Structure
 
 - app/main.py - FastAPI entrypoint
