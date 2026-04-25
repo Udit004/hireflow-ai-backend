@@ -12,6 +12,7 @@ load_dotenv()
 class Settings:
     app_env: str = os.getenv("APP_ENV", "dev")
     app_name: str = os.getenv("APP_NAME", "JD Agentic Test System")
+    postgres_url: str = os.getenv("POSTGRES_URL", "sqlite:///./jd_agentic.db")
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
     gemini_planner_model: str = os.getenv("GEMINI_PLANNER_MODEL", "gemini-2.5-flash-lite")

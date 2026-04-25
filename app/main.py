@@ -3,7 +3,9 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import router as api_router
+from app.modules.auth.router import router as auth_router
+from app.modules.create_test.router import router as create_test_router
+from app.db.session import init_db
 from app.core.logging import configure_logging
 
 
@@ -45,7 +47,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(create_test_router, prefix="/api/v1")
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    init_db()
 
 
 @app.get("/")
