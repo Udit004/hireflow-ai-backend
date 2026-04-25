@@ -19,7 +19,7 @@ frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[frontend_origin],
+    allow_origins=[frontend_origin, "https://hireflow-ai-frontend.vercel.app/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
