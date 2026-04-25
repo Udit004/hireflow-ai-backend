@@ -1,6 +1,9 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
+from app.modules.auth.model import User
 from app.modules.auth.firebase_admin_client import verify_id_token
 from app.modules.auth.schemas import AuthenticatedUser
 
@@ -9,6 +12,7 @@ bearer_scheme = HTTPBearer(auto_error=True)
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
 ) -> AuthenticatedUser:
     token = credentials.credentials
 
@@ -28,6 +32,12 @@ def get_current_user(
         )
 
     role = claims.get("role", "student")
+
+    # Prefer DB role when available so role checks work without Firebase custom claims.
+    existing_user = db.get(User, uid)
+    if existing_user:
+        role = existing_user.role
+
     if role not in {"admin", "educator", "student"}:
         role = "student"
 
