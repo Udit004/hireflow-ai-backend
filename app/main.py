@@ -9,6 +9,25 @@ from app.core.logging import configure_logging
 
 configure_logging()
 
+
+def _normalize_origin(origin: str) -> str:
+    return origin.strip().rstrip("/")
+
+
+def _load_allowed_origins() -> list[str]:
+    raw_origins = os.getenv("FRONTEND_ORIGINS", "")
+    origins = [
+        _normalize_origin(origin)
+        for origin in raw_origins.split(",")
+        if origin.strip()
+    ]
+
+    fallback_origin = _normalize_origin(os.getenv("FRONTEND_ORIGIN", "http://localhost:3000"))
+    if fallback_origin not in origins:
+        origins.append(fallback_origin)
+
+    return origins
+
 app = FastAPI(
     title="JD Agentic Test System",
     version="0.1.0",
@@ -16,10 +35,11 @@ app = FastAPI(
 )
 
 frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+allowed_origins = _load_allowed_origins()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[frontend_origin, "https://hireflow-assistent-ai.vercel.app/"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
