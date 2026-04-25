@@ -67,7 +67,15 @@ def _to_saved_test_response(test: GeneratedTest) -> SavedTestResponse:
     )
 
 
-def generate_and_save_test(payload: SaveGeneratedTestRequest, db: Session) -> SavedTestResponse:
+def generate_and_save_test(
+    payload: SaveGeneratedTestRequest,
+    db: Session,
+    requester_uid: str,
+    requester_role: str,
+) -> SavedTestResponse:
+    if requester_role != "admin" and payload.created_by_uid != requester_uid:
+        raise HTTPException(status_code=403, detail="Not allowed to save tests for another user")
+
     user = db.get(User, payload.created_by_uid)
     if not user:
         raise HTTPException(status_code=404, detail="Creator user not found")
@@ -99,14 +107,31 @@ def generate_and_save_test(payload: SaveGeneratedTestRequest, db: Session) -> Sa
     return _to_saved_test_response(saved)
 
 
-def get_saved_test(test_id: UUID, db: Session) -> SavedTestResponse:
+def get_saved_test(
+    test_id: UUID,
+    db: Session,
+    requester_uid: str,
+    requester_role: str,
+) -> SavedTestResponse:
     saved = db.get(GeneratedTest, test_id)
     if not saved:
         raise HTTPException(status_code=404, detail="Saved test not found")
+
+    if requester_role != "admin" and saved.created_by_uid != requester_uid:
+        raise HTTPException(status_code=403, detail="Not allowed to access this test")
+
     return _to_saved_test_response(saved)
 
 
-def list_user_tests(uid: str, db: Session) -> list[SavedTestListItem]:
+def list_user_tests(
+    uid: str,
+    db: Session,
+    requester_uid: str,
+    requester_role: str,
+) -> list[SavedTestListItem]:
+    if requester_role != "admin" and uid != requester_uid:
+        raise HTTPException(status_code=403, detail="Not allowed to list another user's tests")
+
     tests = (
         db.query(GeneratedTest)
         .filter(GeneratedTest.created_by_uid == uid)

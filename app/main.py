@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.modules.auth.router import router as auth_router
+from app.modules.auth.firebase_admin_client import initialize_firebase_admin
 from app.modules.create_test.router import router as create_test_router
 from app.db.session import init_db
 from app.core.logging import configure_logging
@@ -53,6 +54,7 @@ app.include_router(create_test_router, prefix="/api/v1")
 
 @app.on_event("startup")
 def on_startup() -> None:
+    initialize_firebase_admin()
     init_db()
 
 

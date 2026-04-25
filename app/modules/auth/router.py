@@ -1,8 +1,14 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.modules.auth.schemas import UserResponse, UserRoleUpdateRequest, UserUpsertRequest
+from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.schemas import (
+    AuthenticatedUser,
+    UserResponse,
+    UserRoleUpdateRequest,
+    UserUpsertRequest,
+)
 from app.modules.auth.service import get_user, sync_user, update_user_role
 
 router = APIRouter(prefix="/users", tags=["auth"])
@@ -13,12 +19,25 @@ router = APIRouter(prefix="/users", tags=["auth"])
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def sync_user_route(payload: UserUpsertRequest, db: Session = Depends(get_db)) -> UserResponse:
+def sync_user_route(
+    payload: UserUpsertRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> UserResponse:
+    # Users can only sync their own profile unless they are admins.
+    if current_user.role != "admin" and current_user.uid != payload.uid:
+        raise HTTPException(status_code=403, detail="Not allowed to sync another user")
     return sync_user(payload, db)
 
 
 @router.get("/{uid}", response_model=UserResponse)
-def get_user_route(uid: str, db: Session = Depends(get_db)) -> UserResponse:
+def get_user_route(
+    uid: str,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> UserResponse:
+    if current_user.role != "admin" and current_user.uid != uid:
+        raise HTTPException(status_code=403, detail="Not allowed to view this user")
     return get_user(uid, db)
 
 
@@ -27,5 +46,8 @@ def update_user_role_route(
     uid: str,
     payload: UserRoleUpdateRequest,
     db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> UserResponse:
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can update roles")
     return update_user_role(uid, payload, db)

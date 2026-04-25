@@ -22,3 +22,9 @@ class UserResponse(BaseModel):
     role: Literal["admin", "educator", "student"]
     created_at: datetime
     updated_at: datetime
+
+
+class AuthenticatedUser(BaseModel):
+    uid: str
+    email: str | None = None
+    role: Literal["admin", "educator", "student"] = "student"

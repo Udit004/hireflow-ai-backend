@@ -1,9 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.create_test.schemas import (
     JDTestRequest,
     SaveGeneratedTestRequest,
@@ -28,7 +30,12 @@ def health_check_route() -> dict[str, str]:
 
 
 @router.post("/generate-test", response_model=TestResponse)
-def generate_test_route(payload: JDTestRequest) -> TestResponse:
+def generate_test_route(
+    payload: JDTestRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> TestResponse:
+    if current_user.role not in {"educator", "admin"}:
+        raise HTTPException(status_code=403, detail="Only educators/admins can generate tests")
     return generate_test(payload)
 
 
@@ -40,15 +47,27 @@ def generate_test_route(payload: JDTestRequest) -> TestResponse:
 def generate_and_save_test_route(
     payload: SaveGeneratedTestRequest,
     db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> SavedTestResponse:
-    return generate_and_save_test(payload, db)
+    if current_user.role not in {"educator", "admin"}:
+        raise HTTPException(status_code=403, detail="Only educators/admins can create tests")
+
+    return generate_and_save_test(payload, db, current_user.uid, current_user.role)
 
 
 @router.get("/tests/{test_id}", response_model=SavedTestResponse)
-def get_saved_test_route(test_id: UUID, db: Session = Depends(get_db)) -> SavedTestResponse:
-    return get_saved_test(test_id, db)
+def get_saved_test_route(
+    test_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> SavedTestResponse:
+    return get_saved_test(test_id, db, current_user.uid, current_user.role)
 
 
 @router.get("/users/{uid}/tests", response_model=list[SavedTestListItem])
-def list_user_tests_route(uid: str, db: Session = Depends(get_db)) -> list[SavedTestListItem]:
-    return list_user_tests(uid, db)
+def list_user_tests_route(
+    uid: str,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> list[SavedTestListItem]:
+    return list_user_tests(uid, db, current_user.uid, current_user.role)
