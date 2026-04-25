@@ -1,30 +1,29 @@
-from app.core.config import get_settings
 from app.graph.workflow import WorkflowState
+from app.schemas.request import JDTestRequest
 from app.schemas.response import TestResponse
-from app.utils.helpers import generate_with_optional_gemini
+from typing import cast
 
 
 def assembler_node(state: WorkflowState) -> WorkflowState:
-    payload = state.get("request")
+    payload = cast(JDTestRequest, state.get("request"))
     if payload is None:
         raise ValueError("Missing required 'request' in workflow state")
 
-    job_description = getattr(payload, "job_description", None)
-    if not isinstance(job_description, str):
-        raise ValueError("Missing or invalid 'job_description' in request")
-
-    role_title = getattr(payload, "role_title", None)
-    if not isinstance(role_title, str):
-        raise ValueError("Missing or invalid 'role_title' in request")
+    role_title = payload.role_title
 
     curated_questions = state.get("curated_questions", [])
+    mcq_count = sum(1 for item in curated_questions if getattr(item, "question_type", "") == "mcq")
+    scenario_count = sum(1 for item in curated_questions if getattr(item, "question_type", "") == "scenario")
 
-    settings = get_settings()
-    prompt = (
-        "Write a concise summary for an interview test created from this job description: "
-        f"{job_description[:1000]}"
+    blueprint = state.get("blueprint", {})
+    topics = blueprint.get("focus_topics", []) if isinstance(blueprint, dict) else []
+    cleaned_topics = [str(topic).strip() for topic in topics if str(topic).strip()]
+    topic_summary = ", ".join(cleaned_topics[:4]) if cleaned_topics else "role-critical skills"
+
+    summary = (
+        f"Assessment for {role_title}: {mcq_count} MCQ and {scenario_count} scenario questions, "
+        f"calibrated for {payload.difficulty} difficulty and focused on {topic_summary}."
     )
-    summary = generate_with_optional_gemini(prompt=prompt, settings=settings)
 
     final_response = TestResponse(
         role_title=role_title,

@@ -59,6 +59,7 @@ def generate_with_optional_gemini(prompt: str, settings: Settings) -> str:
             model=settings.gemini_model,
             temperature=settings.temperature,
             google_api_key=settings.google_api_key,
+            max_output_tokens=220,
         )
         response = llm.invoke(prompt)
         return _extract_text_from_response(response)
@@ -70,24 +71,42 @@ def generate_json_with_optional_gemini(
     prompt: str,
     settings: Settings,
     fallback_data: dict[str, Any] | list[Any],
+    max_output_tokens: int = 1400,
+    model: str | None = None,
+    temperature: float | None = None,
 ) -> dict[str, Any] | list[Any]:
     if not settings.google_api_key:
         return fallback_data
 
+    attempts = [
+        (prompt, max_output_tokens),
+        (
+            prompt
+            + "\n\nPrevious attempt was truncated or invalid. Return only compact valid JSON. "
+            + "Do not include markdown fences, code blocks, or commentary.",
+            min(max_output_tokens * 2, 4096),
+        ),
+    ]
+
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        llm = ChatGoogleGenerativeAI(
-            model=settings.gemini_model,
-            temperature=settings.temperature,
-            google_api_key=settings.google_api_key,
-        )
-        response = llm.invoke(prompt)
-        text = _extract_text_from_response(response)
-        json_blob = _extract_json_blob(text)
-        parsed = json.loads(json_blob)
-        if isinstance(parsed, (dict, list)):
-            return parsed
+        for current_prompt, current_max_output_tokens in attempts:
+            try:
+                llm = ChatGoogleGenerativeAI(
+                    model=model or settings.gemini_model,
+                    temperature=settings.temperature if temperature is None else temperature,
+                    google_api_key=settings.google_api_key,
+                    max_output_tokens=current_max_output_tokens,
+                )
+                response = llm.invoke(current_prompt)
+                text = _extract_text_from_response(response)
+                json_blob = _extract_json_blob(text)
+                parsed = json.loads(json_blob)
+                if isinstance(parsed, (dict, list)):
+                    return parsed
+            except Exception:
+                continue
         return fallback_data
     except Exception:
         return fallback_data
