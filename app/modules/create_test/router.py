@@ -136,5 +136,12 @@ def submit_public_test_route(
     slug: str,
     payload: SubmitAttemptRequest,
     db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> SubmitAttemptResponse:
-    return submit_public_attempt(slug, payload, db)
+    if current_user.role != "candidate":
+        raise HTTPException(status_code=403, detail="Only candidates can submit tests")
+
+    if not current_user.email:
+        raise HTTPException(status_code=403, detail="Candidate account must have a verified email")
+
+    return submit_public_attempt(slug, payload, current_user.email, db)

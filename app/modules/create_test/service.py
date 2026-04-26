@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal, cast
 from uuid import UUID
@@ -15,6 +15,8 @@ from app.models.generated_test import GeneratedTest
 from app.modules.auth.model import User
 from app.modules.create_test.schemas import (
     RecruiterAttemptListItem,
+    RecruiterAttemptFeedbackSummary,
+    RecruiterAttemptQuestionFeedback,
     JDTestRequest,
     AttemptAnswer,
     PublicTestQuestion,
@@ -195,6 +197,7 @@ def get_public_test_by_slug(
 def submit_public_attempt(
     slug: str,
     payload: SubmitAttemptRequest,
+    authenticated_email: str,
     db: Session,
 ) -> SubmitAttemptResponse:
     saved = db.query(GeneratedTest).filter(GeneratedTest.public_slug == slug).first()
@@ -204,13 +207,35 @@ def submit_public_attempt(
     if saved.status != PUBLISHED:
         raise HTTPException(status_code=409, detail="Attempts are allowed only for published tests")
 
+    normalized_authenticated_email = authenticated_email.strip().lower()
+    normalized_payload_email = payload.candidate_email.strip().lower()
+
+    if normalized_payload_email != normalized_authenticated_email:
+        raise HTTPException(status_code=403, detail="Candidate email must match logged-in user email")
+
+    existing_attempt = (
+        db.query(Attempt)
+        .filter(
+            Attempt.test_id == saved.id,
+            Attempt.candidate_email == normalized_authenticated_email,
+        )
+        .first()
+    )
+    if existing_attempt:
+        raise HTTPException(
+            status_code=409,
+            detail="This candidate has already submitted this test and cannot attempt it again.",
+        )
+
+    _enforce_duration_limits(saved.settings, payload.started_at)
+
     score = _calculate_attempt_score(saved.questions, payload.answers)
     submitted_at = datetime.now(timezone.utc)
     answer_rows = jsonable_encoder(payload.answers)
 
     attempt = Attempt(
         test_id=saved.id,
-        candidate_email=payload.candidate_email,
+        candidate_email=normalized_authenticated_email,
         answers=answer_rows,
         score=score,
         started_at=payload.started_at,
@@ -228,6 +253,44 @@ def submit_public_attempt(
     )
 
 
+def _enforce_duration_limits(settings: dict, started_at: datetime | None) -> None:
+    duration_minutes = _extract_duration_minutes(settings)
+    if duration_minutes is None:
+        return
+
+    if started_at is None:
+        raise HTTPException(status_code=422, detail="started_at is required when duration is configured")
+
+    now = datetime.now(timezone.utc)
+    normalized_start = started_at
+    if normalized_start.tzinfo is None:
+        normalized_start = normalized_start.replace(tzinfo=timezone.utc)
+
+    if normalized_start > now + timedelta(minutes=1):
+        raise HTTPException(status_code=422, detail="started_at cannot be in the future")
+
+    elapsed_seconds = (now - normalized_start).total_seconds()
+    allowed_seconds = duration_minutes * 60
+    if elapsed_seconds > allowed_seconds:
+        raise HTTPException(status_code=409, detail="Test duration exceeded")
+
+
+def _extract_duration_minutes(settings: dict) -> int | None:
+    raw_value = settings.get("duration_minutes", settings.get("duration"))
+    if raw_value is None:
+        return None
+
+    try:
+        parsed = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+    if parsed <= 0:
+        return None
+
+    return parsed
+
+
 def list_test_attempts(
     test_id: UUID,
     db: Session,
@@ -242,17 +305,24 @@ def list_test_attempts(
         .all()
     )
 
-    return [
-        RecruiterAttemptListItem(
-            attempt_id=attempt.id,
-            test_id=attempt.test_id,
-            candidate_email=attempt.candidate_email,
-            score=float(attempt.score),
-            started_at=attempt.started_at,
-            submitted_at=attempt.submitted_at,
+    attempt_items: list[RecruiterAttemptListItem] = []
+    for attempt in attempts:
+        question_feedback, feedback_summary = _build_attempt_feedback(saved.questions, attempt.answers)
+        attempt_items.append(
+            RecruiterAttemptListItem(
+                attempt_id=attempt.id,
+                test_id=attempt.test_id,
+                candidate_email=attempt.candidate_email,
+                answers=[AttemptAnswer(**answer) for answer in attempt.answers],
+                score=float(attempt.score),
+                started_at=attempt.started_at,
+                submitted_at=attempt.submitted_at,
+                feedback_summary=feedback_summary,
+                question_feedback=question_feedback,
+            )
         )
-        for attempt in attempts
-    ]
+
+    return attempt_items
 
 
 def _get_owned_test(
@@ -305,6 +375,104 @@ def _calculate_attempt_score(
 
     percentage = (Decimal(mcq_correct) * Decimal("100")) / Decimal(mcq_total)
     return percentage.quantize(Decimal("0.01"))
+
+
+def _build_attempt_feedback(
+    questions: list[dict],
+    attempt_answers: list[dict],
+) -> tuple[list[RecruiterAttemptQuestionFeedback], RecruiterAttemptFeedbackSummary]:
+    answers_by_index = {
+        int(answer.get("question_index", -1)): str(answer.get("answer", "")).strip()
+        for answer in attempt_answers
+    }
+    feedback_items: list[RecruiterAttemptQuestionFeedback] = []
+    answered_count = 0
+    unanswered_count = 0
+    auto_graded_count = 0
+    correct_count = 0
+    incorrect_count = 0
+    manual_review_count = 0
+
+    for index, question in enumerate(questions):
+        question_type = cast(Literal["mcq", "code", "scenario"], question.get("question_type"))
+        candidate_answer = answers_by_index.get(index)
+        expected_answer = str(question.get("expected_answer", "")).strip()
+        normalized_candidate = candidate_answer.lower() if candidate_answer else ""
+        normalized_expected = expected_answer.lower()
+
+        if candidate_answer:
+            answered_count += 1
+        else:
+            unanswered_count += 1
+
+        if not candidate_answer:
+            verdict: Literal["correct", "incorrect", "needs_review", "unanswered"] = "unanswered"
+            feedback = "No answer was submitted for this question."
+        elif question_type == "mcq":
+            auto_graded_count += 1
+            if normalized_candidate == normalized_expected and normalized_expected:
+                verdict = "correct"
+                correct_count += 1
+                feedback = "The submitted option matches the expected answer."
+            else:
+                verdict = "incorrect"
+                incorrect_count += 1
+                feedback = "The submitted option does not match the expected answer."
+        else:
+            verdict = "needs_review"
+            manual_review_count += 1
+            feedback = _build_manual_review_feedback(candidate_answer, expected_answer)
+
+        feedback_items.append(
+            RecruiterAttemptQuestionFeedback(
+                question_index=index,
+                question_type=question_type,
+                question=cast(str, question.get("question")),
+                options=cast(list[str] | None, question.get("options")),
+                expected_answer=expected_answer,
+                candidate_answer=candidate_answer or None,
+                verdict=verdict,
+                feedback=feedback,
+            )
+        )
+
+    return (
+        feedback_items,
+        RecruiterAttemptFeedbackSummary(
+            answered_count=answered_count,
+            unanswered_count=unanswered_count,
+            auto_graded_count=auto_graded_count,
+            correct_count=correct_count,
+            incorrect_count=incorrect_count,
+            manual_review_count=manual_review_count,
+        ),
+    )
+
+
+def _build_manual_review_feedback(candidate_answer: str, expected_answer: str) -> str:
+    expected_keywords = {
+        token
+        for token in expected_answer.lower().split()
+        if len(token) > 3 and token.isascii()
+    }
+    candidate_terms = {
+        token
+        for token in candidate_answer.lower().split()
+        if len(token) > 3 and token.isascii()
+    }
+
+    keyword_matches = len(expected_keywords & candidate_terms)
+
+    if len(candidate_answer) < 25:
+        return "Answer submitted, but it is brief. Manual recruiter review is recommended."
+
+    if expected_keywords and keyword_matches >= max(1, len(expected_keywords) // 2):
+        return "Answer covers several expected concepts. Manual recruiter review is still recommended."
+
+    if expected_keywords and keyword_matches > 0:
+        return "Answer covers some expected concepts. Manual recruiter review is recommended."
+
+    return "Answer does not clearly match the expected concepts. Manual recruiter review is recommended."
 
 
 def list_user_tests(

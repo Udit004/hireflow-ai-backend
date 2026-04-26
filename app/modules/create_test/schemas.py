@@ -104,10 +104,33 @@ class SubmitAttemptResponse(BaseModel):
     submitted_at: datetime
 
 
+class RecruiterAttemptFeedbackSummary(BaseModel):
+    answered_count: int
+    unanswered_count: int
+    auto_graded_count: int
+    correct_count: int
+    incorrect_count: int
+    manual_review_count: int
+
+
+class RecruiterAttemptQuestionFeedback(BaseModel):
+    question_index: int = Field(..., ge=0)
+    question_type: Literal["mcq", "code", "scenario"]
+    question: str
+    options: list[str] | None = None
+    expected_answer: str
+    candidate_answer: str | None = None
+    verdict: Literal["correct", "incorrect", "needs_review", "unanswered"]
+    feedback: str
+
+
 class RecruiterAttemptListItem(BaseModel):
     attempt_id: UUID
     test_id: UUID
     candidate_email: str
+    answers: list[AttemptAnswer]
     score: float
     started_at: datetime | None
     submitted_at: datetime
+    feedback_summary: RecruiterAttemptFeedbackSummary
+    question_feedback: list[RecruiterAttemptQuestionFeedback]
