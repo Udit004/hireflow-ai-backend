@@ -14,6 +14,7 @@ from app.models.attempt import Attempt
 from app.models.generated_test import GeneratedTest
 from app.modules.auth.model import User
 from app.modules.create_test.schemas import (
+    CandidateAttemptHistoryItem,
     RecruiterAttemptListItem,
     RecruiterAttemptFeedbackSummary,
     RecruiterAttemptQuestionFeedback,
@@ -175,6 +176,7 @@ def publish_test(
 
 def get_public_test_by_slug(
     slug: str,
+    authenticated_email: str,
     db: Session,
 ) -> PublicTestResponse:
     saved = db.query(GeneratedTest).filter(GeneratedTest.public_slug == slug).first()
@@ -183,6 +185,21 @@ def get_public_test_by_slug(
 
     if saved.status != PUBLISHED:
         raise HTTPException(status_code=404, detail="Public test not available")
+
+    normalized_authenticated_email = authenticated_email.strip().lower()
+    existing_attempt = (
+        db.query(Attempt)
+        .filter(
+            Attempt.test_id == saved.id,
+            Attempt.candidate_email == normalized_authenticated_email,
+        )
+        .first()
+    )
+    if existing_attempt:
+        raise HTTPException(
+            status_code=409,
+            detail="This candidate has already attempted this test and cannot open it again.",
+        )
 
     return PublicTestResponse(
         test_id=saved.id,
@@ -501,4 +518,34 @@ def list_user_tests(
             created_at=test.created_at,
         )
         for test in tests
+    ]
+
+
+def list_candidate_attempt_history(
+    authenticated_email: str,
+    db: Session,
+) -> list[CandidateAttemptHistoryItem]:
+    normalized_email = authenticated_email.strip().lower()
+
+    attempt_rows = (
+        db.query(Attempt, GeneratedTest)
+        .join(GeneratedTest, Attempt.test_id == GeneratedTest.id)
+        .filter(Attempt.candidate_email == normalized_email)
+        .order_by(Attempt.submitted_at.desc())
+        .all()
+    )
+
+    return [
+        CandidateAttemptHistoryItem(
+            attempt_id=attempt.id,
+            test_id=test.id,
+            role_title=test.role_title,
+            difficulty=cast(Literal["easy", "medium", "hard"], test.difficulty),
+            total_questions=test.total_questions,
+            score=float(attempt.score),
+            started_at=attempt.started_at,
+            submitted_at=attempt.submitted_at,
+            public_slug=test.public_slug,
+        )
+        for attempt, test in attempt_rows
     ]

@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.create_test.schemas import (
+    CandidateAttemptHistoryItem,
     JDTestRequest,
     PublicTestResponse,
     PublishTestResponse,
@@ -24,6 +25,7 @@ from app.modules.create_test.service import (
     get_public_test_by_slug,
     get_saved_test,
     health_check,
+    list_candidate_attempt_history,
     list_test_attempts,
     list_user_tests,
     publish_test,
@@ -123,12 +125,37 @@ def list_user_tests_route(
     return list_user_tests(uid, db, current_user.uid)
 
 
+@router.get("/users/{uid}/attempts", response_model=list[CandidateAttemptHistoryItem])
+def list_candidate_attempt_history_route(
+    uid: str,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> list[CandidateAttemptHistoryItem]:
+    if current_user.uid != uid:
+        raise HTTPException(status_code=403, detail="Not allowed to list another user's attempts")
+
+    if current_user.role != "candidate":
+        raise HTTPException(status_code=403, detail="Only candidates can view candidate attempt history")
+
+    if not current_user.email:
+        raise HTTPException(status_code=403, detail="Candidate account must have a verified email")
+
+    return list_candidate_attempt_history(current_user.email, db)
+
+
 @router.get("/public/tests/{slug}", response_model=PublicTestResponse)
 def get_public_test_route(
     slug: str,
     db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> PublicTestResponse:
-    return get_public_test_by_slug(slug, db)
+    if current_user.role != "candidate":
+        raise HTTPException(status_code=403, detail="Only candidates can access public tests")
+
+    if not current_user.email:
+        raise HTTPException(status_code=403, detail="Candidate account must have a verified email")
+
+    return get_public_test_by_slug(slug, current_user.email, db)
 
 
 @router.post("/public/tests/{slug}/submit", response_model=SubmitAttemptResponse)

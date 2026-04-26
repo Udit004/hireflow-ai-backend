@@ -134,3 +134,15 @@ class RecruiterAttemptListItem(BaseModel):
     submitted_at: datetime
     feedback_summary: RecruiterAttemptFeedbackSummary
     question_feedback: list[RecruiterAttemptQuestionFeedback]
+
+
+class CandidateAttemptHistoryItem(BaseModel):
+    attempt_id: UUID
+    test_id: UUID
+    role_title: str
+    difficulty: Literal["easy", "medium", "hard"]
+    total_questions: int
+    score: float
+    started_at: datetime | None
+    submitted_at: datetime
+    public_slug: str | None
