@@ -34,8 +34,8 @@ def generate_test_route(
     payload: JDTestRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> TestResponse:
-    if current_user.role not in {"educator", "admin"}:
-        raise HTTPException(status_code=403, detail="Only educators/admins can generate tests")
+    if current_user.role != "recruiter":
+        raise HTTPException(status_code=403, detail="Only recruiters can generate tests")
     return generate_test(payload)
 
 
@@ -49,10 +49,10 @@ def generate_and_save_test_route(
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> SavedTestResponse:
-    if current_user.role not in {"educator", "admin"}:
-        raise HTTPException(status_code=403, detail="Only educators/admins can create tests")
+    if current_user.role != "recruiter":
+        raise HTTPException(status_code=403, detail="Only recruiters can create tests")
 
-    return generate_and_save_test(payload, db, current_user.uid, current_user.role)
+    return generate_and_save_test(payload, db, current_user.uid)
 
 
 @router.get("/tests/{test_id}", response_model=SavedTestResponse)
@@ -61,7 +61,7 @@ def get_saved_test_route(
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> SavedTestResponse:
-    return get_saved_test(test_id, db, current_user.uid, current_user.role)
+    return get_saved_test(test_id, db, current_user.uid)
 
 
 @router.get("/users/{uid}/tests", response_model=list[SavedTestListItem])
@@ -70,4 +70,4 @@ def list_user_tests_route(
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[SavedTestListItem]:
-    return list_user_tests(uid, db, current_user.uid, current_user.role)
+    return list_user_tests(uid, db, current_user.uid)

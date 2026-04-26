@@ -24,8 +24,7 @@ def sync_user_route(
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> UserResponse:
-    # Users can only sync their own profile unless they are admins.
-    if current_user.role != "admin" and current_user.uid != payload.uid:
+    if current_user.uid != payload.uid:
         raise HTTPException(status_code=403, detail="Not allowed to sync another user")
     return sync_user(payload, db)
 
@@ -36,7 +35,7 @@ def get_user_route(
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> UserResponse:
-    if current_user.role != "admin" and current_user.uid != uid:
+    if current_user.uid != uid:
         raise HTTPException(status_code=403, detail="Not allowed to view this user")
     return get_user(uid, db)
 
@@ -48,6 +47,6 @@ def update_user_role_route(
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> UserResponse:
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can update roles")
+    if current_user.uid != uid:
+        raise HTTPException(status_code=403, detail="Not allowed to update another user's role")
     return update_user_role(uid, payload, db)

@@ -12,7 +12,7 @@ class User(Base):
     uid: Mapped[str] = mapped_column(String(128), primary_key=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    role: Mapped[str] = mapped_column(String(32), nullable=False, default="student")
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="candidate")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
