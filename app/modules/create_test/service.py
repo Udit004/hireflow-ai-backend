@@ -515,6 +515,8 @@ def list_user_tests(
             difficulty=cast(Literal["easy", "medium", "hard"], test.difficulty),
             status=cast(Literal["draft", "published", "archived"], test.status),
             total_questions=test.total_questions,
+            attempt_count=len(test.attempts),
+            public_slug=test.public_slug,
             created_at=test.created_at,
         )
         for test in tests

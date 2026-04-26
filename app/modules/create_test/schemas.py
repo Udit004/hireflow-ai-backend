@@ -59,6 +59,8 @@ class SavedTestListItem(BaseModel):
     difficulty: Literal["easy", "medium", "hard"]
     status: TestStatus
     total_questions: int
+    attempt_count: int
+    public_slug: str | None
     created_at: datetime
 
 
