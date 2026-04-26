@@ -8,17 +8,26 @@ from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.create_test.schemas import (
     JDTestRequest,
+    PublicTestResponse,
+    PublishTestResponse,
+    RecruiterAttemptListItem,
     SaveGeneratedTestRequest,
     SavedTestListItem,
     SavedTestResponse,
+    SubmitAttemptRequest,
+    SubmitAttemptResponse,
     TestResponse,
 )
 from app.modules.create_test.service import (
     generate_and_save_test,
     generate_test,
+    get_public_test_by_slug,
     get_saved_test,
     health_check,
+    list_test_attempts,
     list_user_tests,
+    publish_test,
+    submit_public_attempt,
 )
 
 router = APIRouter(tags=["test-generation"])
@@ -40,11 +49,28 @@ def generate_test_route(
 
 
 @router.post(
-    "/tests/generate-and-save",
+    "/tests/generate",
     response_model=SavedTestResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def generate_and_save_test_route(
+    payload: SaveGeneratedTestRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> SavedTestResponse:
+    if current_user.role != "recruiter":
+        raise HTTPException(status_code=403, detail="Only recruiters can create tests")
+
+    return generate_and_save_test(payload, db, current_user.uid)
+
+
+@router.post(
+    "/tests/generate-and-save",
+    response_model=SavedTestResponse,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
+def generate_and_save_test_legacy_route(
     payload: SaveGeneratedTestRequest,
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -64,6 +90,30 @@ def get_saved_test_route(
     return get_saved_test(test_id, db, current_user.uid)
 
 
+@router.get("/tests/{test_id}/attempts", response_model=list[RecruiterAttemptListItem])
+def list_test_attempts_route(
+    test_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> list[RecruiterAttemptListItem]:
+    if current_user.role != "recruiter":
+        raise HTTPException(status_code=403, detail="Only recruiters can view test attempts")
+
+    return list_test_attempts(test_id, db, current_user.uid)
+
+
+@router.post("/tests/{test_id}/publish", response_model=PublishTestResponse)
+def publish_test_route(
+    test_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> PublishTestResponse:
+    if current_user.role != "recruiter":
+        raise HTTPException(status_code=403, detail="Only recruiters can publish tests")
+
+    return publish_test(test_id, db, current_user.uid)
+
+
 @router.get("/users/{uid}/tests", response_model=list[SavedTestListItem])
 def list_user_tests_route(
     uid: str,
@@ -71,3 +121,20 @@ def list_user_tests_route(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[SavedTestListItem]:
     return list_user_tests(uid, db, current_user.uid)
+
+
+@router.get("/public/tests/{slug}", response_model=PublicTestResponse)
+def get_public_test_route(
+    slug: str,
+    db: Session = Depends(get_db),
+) -> PublicTestResponse:
+    return get_public_test_by_slug(slug, db)
+
+
+@router.post("/public/tests/{slug}/submit", response_model=SubmitAttemptResponse)
+def submit_public_test_route(
+    slug: str,
+    payload: SubmitAttemptRequest,
+    db: Session = Depends(get_db),
+) -> SubmitAttemptResponse:
+    return submit_public_attempt(slug, payload, db)

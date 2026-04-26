@@ -27,6 +27,7 @@ def get_db() -> Session:
 
 def init_db() -> None:
     # Import models so SQLAlchemy can discover table metadata.
+    from app.models import attempt  # noqa: F401
     from app.models import generated_test  # noqa: F401
     from app.modules.auth import model  # noqa: F401
 

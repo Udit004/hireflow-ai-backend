@@ -28,6 +28,7 @@ class Settings:
     gemini_planner_temperature: float = float(os.getenv("GEMINI_PLANNER_TEMPERATURE", "0.2"))
     gemini_generation_temperature: float = float(os.getenv("GEMINI_GENERATION_TEMPERATURE", "0.45"))
     gemini_critic_temperature: float = float(os.getenv("GEMINI_CRITIC_TEMPERATURE", "0.15"))
+    frontend_public_base_url: str = os.getenv("FRONTEND_PUBLIC_BASE_URL", "http://localhost:3000")
 
 
 @lru_cache
